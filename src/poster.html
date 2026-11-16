@@ -548,11 +548,32 @@ const regions = {
   'eurasian-steppe': { background: 'regionalEurasianSteppe', accent: '#c2a474', base: '#2d2c31', mobileX: '75%' }
 };
 
+// Keep Neolithic references strictly scoped to their intended region.
+// The South Cone, Brazil, Europe and the other regions use sources/neolithic.txt.
+// Only the Eurasian Steppe and MENA have their own Neolithic data.
+const exclusiveNeolithicRegions = Object.freeze({
+  'eurasian-steppe': 'initial-neo-eurasian-steppe',
+  'middle-east-north-africa': 'initial-neo-middle-east-north-africa'
+});
+
 function sourceBlock(era, region = activeRegion) {
+  if (era === 'neo') {
+    const exclusiveId = exclusiveNeolithicRegions[region];
+    const exclusive = exclusiveId ? $(exclusiveId) : null;
+    if (exclusive?.textContent.trim()) return exclusive;
+    const standard = $('initial-neo');
+    return standard.textContent.trim() ? standard : $('fallback-neo');
+  }
   const regional = $('initial-' + era + '-' + region);
   if (regional?.textContent.trim()) return regional;
   const shared = $('initial-' + era);
   return shared.textContent.trim() ? shared : $('fallback-' + era);
+}
+
+// Manual Neolithic edits belong only to the selected region, never to another.
+function sourceDraftKey(era, region = activeRegion) {
+  const blockId = sourceBlock(era, region).id;
+  return era === 'neo' ? region + '::' + blockId : blockId;
 }
 
 const messages = {
@@ -1840,7 +1861,7 @@ function onSourceEdit() {
 
 function loadSources(era) {
   const block = sourceBlock(era);
-  $(sourceFields[era].input).value = sourceDrafts.get(block.id) ?? block.textContent.trim();
+  $(sourceFields[era].input).value = sourceDrafts.get(sourceDraftKey(era)) ?? block.textContent.trim();
 }
 
 
@@ -1860,7 +1881,7 @@ async function refreshSteppeNeolithic() {
     if (block.textContent.trim() === downloaded) return;
     block.textContent = '\n' + downloaded + '\n';
     // Never overwrite a user's manual edits to this region's source.
-    if (activeRegion === 'eurasian-steppe' && !sourceDrafts.has(block.id)) {
+    if (activeRegion === 'eurasian-steppe' && !sourceDrafts.has(sourceDraftKey('neo'))) {
       loadSources('neo');
       onSourceEdit();
     }
@@ -1885,7 +1906,7 @@ async function refreshMenaNeolithic() {
     if (block.textContent.trim() === downloaded) return;
     block.textContent = '\n' + downloaded + '\n';
     // Preserve user-edited sources when switching regions.
-    if (activeRegion === 'middle-east-north-africa' && !sourceDrafts.has(block.id)) {
+    if (activeRegion === 'middle-east-north-africa' && !sourceDrafts.has(sourceDraftKey('neo'))) {
       loadSources('neo');
       onSourceEdit();
     }
@@ -1897,7 +1918,7 @@ async function refreshMenaNeolithic() {
 $('region').addEventListener('change', event => {
   const previous = activeRegion;
   activeRegion = event.target.value;
-  const changed = eras.filter(era => sourceBlock(era, previous) !== sourceBlock(era));
+  const changed = eras.filter(era => era === 'neo' || sourceBlock(era, previous) !== sourceBlock(era));
   if (changed.length) {
     changed.forEach(loadSources);
     onSourceEdit();
@@ -1912,7 +1933,7 @@ for (const era of eras) {
   const checkbox = $(sourceFields[era].checkbox);
   loadSources(era);
   input.addEventListener('input', () => {
-    sourceDrafts.set(sourceBlock(era).id, input.value);
+    sourceDrafts.set(sourceDraftKey(era), input.value);
     if (checkbox.checked) onSourceEdit();
     else refreshCounts();
   });
@@ -1929,7 +1950,7 @@ $('targetInput').addEventListener('input', () => queueCalculation());
 $('calcBtn').addEventListener('click', () => queueCalculation(true));
 $('resetSources').addEventListener('click', () => {
   for (const era of eras) {
-    sourceDrafts.delete(sourceBlock(era).id);
+    sourceDrafts.delete(sourceDraftKey(era));
     loadSources(era);
   }
   onSourceEdit();
